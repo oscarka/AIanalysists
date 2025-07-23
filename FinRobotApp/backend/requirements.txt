@@ -1,0 +1,6 @@
+fastapi
+uvicorn
+pydantic
+pandas
+autogen
+# finrobot  # 如为本地源码可软链或复制
