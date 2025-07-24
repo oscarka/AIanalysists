@@ -1,0 +1,10 @@
+[build]
+# Railway会自动用Dockerfile构建，如无Dockerfile可用下面的命令
+# command = "pip install -r requirements.txt"
+
+[start]
+command = "uvicorn main:app --host 0.0.0.0 --port $PORT"
+
+[env]
+OAI_CONFIG_LIST = "请在Railway后台配置你的大模型API配置内容或路径"
+config_api_keys = "请在Railway后台配置你的数据API密钥内容或路径"
