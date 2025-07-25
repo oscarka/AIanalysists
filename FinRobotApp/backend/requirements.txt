@@ -3,5 +3,18 @@ uvicorn
 pydantic
 pandas
 autogen
+
+# financial libraries
 finnhub-python
+yfinance
+mplfinance
+backtrader
+sec_api
+
+# data handling
+numpy
+pandas
+
+# historical data
+praw
 # finrobot  # 如为本地源码可软链或复制
