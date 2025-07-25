@@ -1,3 +1,4 @@
+IPython
 fastapi
 uvicorn
 pydantic
