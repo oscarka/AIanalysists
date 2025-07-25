@@ -7,7 +7,15 @@ FinRobotApp/
 ├── backend/           # FastAPI后端
 │   ├── main.py        # 主API服务
 │   ├── requirements.txt
-│   └── finrobot/      # 你的finrobot核心代码（可软链或复制）
+│   ├── Dockerfile
+│   ├── railway.toml
+│   └── finrobot/      # finrobot核心代码包（必须有__init__.py）
+│       ├── __init__.py
+│       ├── agents/
+│       ├── data_source/
+│       ├── functional/
+│       ├── toolkits.py
+│       └── utils.py
 ├── frontend/          # React + Ant Design前端
 │   ├── package.json
 │   └── src/
