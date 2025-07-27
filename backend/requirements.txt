@@ -1,0 +1,27 @@
+IPython
+fastapi
+uvicorn
+pydantic
+pandas
+autogen
+
+# financial libraries
+finnhub-python
+yfinance
+mplfinance
+backtrader
+sec_api
+
+# data handling
+numpy
+pandas
+reportlab
+numpy
+
+# historical data
+praw
+# finrobot  # 如为本地源码可软链或复制
+
+
+matplotlib
+openai
