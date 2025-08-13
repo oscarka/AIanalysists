@@ -342,7 +342,7 @@ class ReportAnalysisUtils:
     def get_key_data(
         ticker_symbol: Annotated[str, "ticker symbol"],
         filing_date: Annotated[
-            str | datetime, "the filing date of the financial report being analyzed"
+            "str | datetime", "the filing date of the financial report being analyzed"
         ],
     ) -> dict:
         """

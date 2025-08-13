@@ -20,7 +20,7 @@ def stringify_output(func):
 
 
 def register_toolkits(
-    config: List[dict | Callable | type],
+    config: List["dict | Callable | type"],
     caller: ConversableAgent,
     executor: ConversableAgent,
     **kwargs

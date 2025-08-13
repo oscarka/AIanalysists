@@ -23,10 +23,10 @@ class FinRobot(AssistantAgent):
 
     def __init__(
         self,
-        agent_config: str | Dict[str, Any],
-        system_message: str | None = None,  # overwrites previous config
-        toolkits: List[Callable | dict | type] = [],  # overwrites previous config
-        proxy: UserProxyAgent | None = None,
+        agent_config: "str | Dict[str, Any]",
+        system_message: "str | None" = None,  # overwrites previous config
+        toolkits: List["Callable | dict | type"] = [],  # overwrites previous config
+        proxy: "UserProxyAgent | None" = None,
         **kwargs,
     ):
         orig_name = ""
@@ -104,7 +104,7 @@ class SingleAssistantBase(ABC):
 
     def __init__(
         self,
-        agent_config: str | Dict[str, Any],
+        agent_config: "str | Dict[str, Any]",
         llm_config: Dict[str, Any] = {},
     ):
         self.assistant = FinRobot(
@@ -126,12 +126,11 @@ class SingleAssistant(SingleAssistantBase):
 
     def __init__(
         self,
-        agent_config: str | Dict[str, Any],
+        agent_config: "str | Dict[str, Any]",
         llm_config: Dict[str, Any] = {},
-        is_termination_msg=lambda x: x.get("content", "")
-        and x.get("content", "").endswith("TERMINATE"),
+        is_termination_msg=lambda x: x.get("content", "").endswith("TERMINATE"),
         human_input_mode="NEVER",
-        max_consecutive_auto_reply=10,
+        max_consecutive_auto_reply=2,
         code_execution_config={
             "work_dir": "coding",
             "use_docker": False,
@@ -149,7 +148,35 @@ class SingleAssistant(SingleAssistantBase):
         )
         self.assistant.register_proxy(self.user_proxy)
 
-    def chat(self, message: str, use_cache=False, **kwargs):
+    def chat(self, message: str, use_cache=False, clear_cache=False, **kwargs):
+        # 根据用户选择直接执行，不再重复检查缓存
+        user_choice = kwargs.get('user_choice', 'restart')
+        
+        if user_choice == 'restart':
+            # 用户选择重新开始，直接清理缓存
+            if not hasattr(self, '_cache_cleared'):
+                self._clear_all_cache()
+                self._cache_cleared = True
+            use_cache = False
+            clear_cache = True
+            print("重新开始分析...")
+        elif user_choice == 'continue':
+            # 用户选择继续，使用缓存
+            use_cache = True
+            print("继续之前的分析...")
+        elif user_choice == 'view_history':
+            # 用户选择查看历史
+            self._show_history()
+            return
+        else:
+            # 默认重新开始
+            if not hasattr(self, '_cache_cleared'):
+                self._clear_all_cache()
+                self._cache_cleared = True
+            use_cache = False
+            clear_cache = True
+            print("默认重新开始分析...")
+        
         with Cache.disk() as cache:
             self.user_proxy.initiate_chat(
                 self.assistant,
@@ -159,7 +186,82 @@ class SingleAssistant(SingleAssistantBase):
             )
 
         print("Current chat finished. Resetting agents ...")
-        self.reset()
+        # 延迟重置，让外部先获取结果
+        # self.reset()  # 注释掉，避免过早重置
+    
+    def _check_cache_exists(self):
+        """检查是否存在缓存"""
+        import os
+        
+        # 检查本地缓存目录
+        local_cache_dirs = ['.cache', 'coding']
+        for cache_dir in local_cache_dirs:
+            if os.path.exists(cache_dir):
+                # 检查目录是否为空
+                try:
+                    if os.listdir(cache_dir):
+                        return True
+                except:
+                    pass
+        
+        # 检查 autogen 全局缓存
+        autogen_cache = os.path.expanduser('~/.cache/autogen')
+        if os.path.exists(autogen_cache):
+            try:
+                if os.listdir(autogen_cache):
+                    return True
+            except:
+                pass
+        
+        return False
+    
+    def _clear_all_cache(self):
+        """清理所有缓存"""
+        import shutil
+        import os
+        
+        # 清理本地缓存目录
+        cache_dirs = ['.cache', 'coding']
+        for cache_dir in cache_dirs:
+            if os.path.exists(cache_dir):
+                try:
+                    shutil.rmtree(cache_dir)
+                    print(f"已清理缓存目录: {cache_dir}")
+                except Exception as e:
+                    print(f"清理缓存失败 {cache_dir}: {e}")
+        
+        # 清理 autogen 全局缓存
+        autogen_cache = os.path.expanduser('~/.cache/autogen')
+        if os.path.exists(autogen_cache):
+            try:
+                # 只清理内容，保留目录结构
+                for item in os.listdir(autogen_cache):
+                    item_path = os.path.join(autogen_cache, item)
+                    if os.path.isfile(item_path):
+                        os.unlink(item_path)
+                    elif os.path.isdir(item_path):
+                        shutil.rmtree(item_path)
+                print("已清理 autogen 全局缓存")
+            except Exception as e:
+                print(f"清理 autogen 缓存失败: {e}")
+        
+        # 清理可能的临时文件
+        temp_dirs = ['/tmp/autogen', '/tmp/finrobot']
+        for temp_dir in temp_dirs:
+            if os.path.exists(temp_dir):
+                try:
+                    shutil.rmtree(temp_dir)
+                    print(f"已清理临时目录: {temp_dir}")
+                except Exception as e:
+                    print(f"清理临时目录失败 {temp_dir}: {e}")
+    
+    def _show_history(self):
+        """显示历史记录"""
+        print("=== 历史分析记录 ===")
+        # 这里可以读取缓存文件显示历史
+        # 暂时简单显示
+        print("历史记录功能开发中...")
+        print("建议选择重新开始分析")
 
     def reset(self):
         self.user_proxy.reset()
@@ -170,12 +272,11 @@ class SingleAssistantRAG(SingleAssistant):
 
     def __init__(
         self,
-        agent_config: str | Dict[str, Any],
+        agent_config: "str | Dict[str, Any]",
         llm_config: Dict[str, Any] = {},
-        is_termination_msg=lambda x: x.get("content", "")
-        and x.get("content", "").endswith("TERMINATE"),
+        is_termination_msg=lambda x: x.get("content", "").endswith("TERMINATE"),
         human_input_mode="NEVER",
-        max_consecutive_auto_reply=10,
+        max_consecutive_auto_reply=2,
         code_execution_config={
             "work_dir": "coding",
             "use_docker": False,
@@ -212,12 +313,11 @@ class SingleAssistantShadow(SingleAssistant):
 
     def __init__(
         self,
-        agent_config: str | Dict[str, Any],
+        agent_config: "str | Dict[str, Any]",
         llm_config: Dict[str, Any] = {},
-        is_termination_msg=lambda x: x.get("content", "")
-        and x.get("content", "").endswith("TERMINATE"),
+        is_termination_msg=lambda x: x.get("content", "").endswith("TERMINATE"),
         human_input_mode="NEVER",
-        max_consecutive_auto_reply=10,
+        max_consecutive_auto_reply=2,
         code_execution_config={
             "work_dir": "coding",
             "use_docker": False,
@@ -270,16 +370,16 @@ class MultiAssistantBase(ABC):
 
     def __init__(
         self,
-        group_config: str | dict,
+        group_config: "str | dict",
         agent_configs: List[
-            Dict[str, Any] | str | ConversableAgent
+            "Dict[str, Any] | str | ConversableAgent"
         ] = [],  # overwrites previous config
         llm_config: Dict[str, Any] = {},
-        user_proxy: UserProxyAgent | None = None,
+        user_proxy: "UserProxyAgent | None" = None,
         is_termination_msg=lambda x: x.get("content", "")
         and x.get("content", "").endswith("TERMINATE"),
         human_input_mode="NEVER",
-        max_consecutive_auto_reply=10,
+        max_consecutive_auto_reply=2,
         code_execution_config={
             "work_dir": "coding",
             "use_docker": False,

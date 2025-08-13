@@ -1,5 +1,5 @@
 {
-    "openai_api_key": "XXXXXXXXXX",
-    "finnhub_api_key": "XXXXXXXXXX",
-    "sec_api_key": "XXXXXXXXXX"
+    "openai_api_key": "sk-6f5caabbb32b411cb21426002d64726f",
+    "finnhub_api_key": "d1uuvbhr01qujmdeo180d1uuvbhr01qujmdeo18g",
+    "sec_api_key": "b83bbeec3fd1158c1570abc678a48913444f881544de3149568fdde7cb6812c7"
 } 

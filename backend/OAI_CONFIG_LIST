@@ -1,7 +1,7 @@
 [
     {
         "model": "deepseek-chat",
-        "api_key": "your-openai-api-key-here",
+        "api_key": "sk-6f5caabbb32b411cb21426002d64726f",
         "base_url": "https://api.deepseek.com/v1"
     }
 ] 

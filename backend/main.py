@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from typing import List, Dict, Any
 import sys
 import os
+import time
 
 # 假设finrobot源码在backend/finrobot
 sys.path.append(os.path.join(os.path.dirname(__file__), "finrobot"))
@@ -53,6 +54,29 @@ def read_root():
 def health_check():
     return {"status": "healthy", "message": "Backend is working"}
 
+@app.post("/stop")
+def stop_analysis():
+    """停止当前分析"""
+    try:
+        # 设置全局停止标志
+        analyze._stop_requested = True
+        print("用户请求停止分析")
+        return {"message": "分析已停止", "status": "stopped"}
+    except Exception as e:
+        return {"error": "停止失败", "detail": str(e)}
+
+@app.post("/reset")
+def reset_analysis():
+    """重置分析状态"""
+    try:
+        # 清除停止标志
+        if hasattr(analyze, '_stop_requested'):
+            delattr(analyze, '_stop_requested')
+        print("分析状态已重置")
+        return {"message": "分析状态已重置", "status": "reset"}
+    except Exception as e:
+        return {"error": "重置失败", "detail": str(e)}
+
 class AssetItem(BaseModel):
     name: str
     type: str
@@ -66,13 +90,23 @@ class AssetItem(BaseModel):
 class AnalyzeRequest(BaseModel):
     assets: List[AssetItem]
     client_profile: Dict[str, Any] = {}
+    user_choice: str = "restart"  # 默认重新开始
 
 @app.post("/analyze")
 def analyze(request: AnalyzeRequest):
+    # 添加全局停止标志检查
+    if hasattr(analyze, '_stop_requested') and analyze._stop_requested:
+        return {"error": "分析已停止", "detail": "用户请求停止分析"}
+    
+    # 设置超时标志
+    analyze._timeout = False
+    analyze._start_time = time.time()
+    
     try:
         print(f"收到请求数据: {request}")
         print(f"资产数量: {len(request.assets)}")
         print(f"客户信息: {request.client_profile}")
+        print(f"用户选择: {request.user_choice}")
         
         # 检查API密钥配置
         try:
@@ -103,20 +137,29 @@ def analyze(request: AnalyzeRequest):
         df = pd.DataFrame([a.dict() for a in request.assets])
         asset_str = df.to_string(index=False)
 
-        # 2. 多因子分析
+        # 检查超时
+        if hasattr(analyze, '_start_time') and time.time() - analyze._start_time > 300:
+            return {
+                "error": "分析超时",
+                "detail": "分析时间超过5分钟，已自动停止",
+                "factor_results": {},
+                "cio_result": "分析超时，请重试或减少资产数量。"
+            }
+        
+        # 2. 多因子分析 - 优化输出长度
         factor_prompts = {
-            'Value_Factor_Analyst': '你是一名专业的价值因子研究员。请基于输入的资产明细和市场数据，分析每个资产的估值水平（如PE、PB、股息率、市销率等），结合历史分位、行业对比、盈利能力、分红政策等，指出当前哪些资产被低估或高估。输出结构需包含：专业分析、通俗解释、可操作建议、风险提示。请控制在200字以内。',
-            #'Growth_Factor_Analyst': '你是一名成长因子研究员。请分析每个资产的营收、净利润、现金流等增长指标，结合行业增速、未来预期、研发投入、市场空间等，判断哪些资产具备高成长潜力。输出结构需包含：专业分析、通俗解释、可操作建议、风险提示。请控制在200字以内。',
-            #'Momentum_Factor_Analyst': '你是一名动量因子研究员。请分析每个资产的价格趋势、换手率、资金流向、历史涨跌幅等，结合市场热点、资金面、技术形态，识别强势资产和弱势资产。输出结构需包含：专业分析、通俗解释、可操作建议、风险提示。请控制在200字以内。',
-            #'Quality_Factor_Analyst': '你是一名质量因子研究员。请分析每个资产的ROE、ROA、负债率、盈利质量、现金流稳定性等，结合行业对比、历史表现，筛选出财务健康、盈利能力强的资产。输出结构需包含：专业分析、通俗解释、可操作建议、风险提示。请控制在200字以内。',
-            #'Volatility_Factor_Analyst': '你是一名波动率因子研究员。请分析每个资产的历史波动率、最大回撤、夏普比率、相关性等，结合市场环境、资产类别，评估风险水平。输出结构需包含：专业分析、通俗解释、可操作建议、风险提示。请控制在200字以内。',
-            #'Liquidity_Factor_Analyst': '你是一名流动性因子研究员。请分析每个资产的成交量、买卖价差、赎回周期、流动性风险等，结合市场环境和客户资金需求，评估流动性水平。输出结构需包含：专业分析、通俗解释、可操作建议、风险提示。请控制在200字以内。',
-            #'Sentiment_Factor_Analyst': '你是一名情绪因子研究员。请分析新闻、社交媒体、市场情绪指标、资金流向等，判断市场整体情绪和热点板块。输出结构需包含：专业分析、通俗解释、可操作建议、风险提示。请控制在200字以内。',
-            #'Macro_Factor_Analyst': '你是一名宏观因子研究员。请分析利率、汇率、通胀、GDP、政策环境等宏观经济指标，结合资产类别、币种、市场，评估对各类资产的影响。输出结构需包含：专业分析、通俗解释、可操作建议、风险提示。请控制在200字以内。'
+            'Value_Factor_Analyst': '你是一名专业的价值因子研究员。请基于输入的资产明细和市场数据，分析每个资产的估值水平（如PE、PB、股息率、市销率等），结合历史分位、行业对比、盈利能力、分红政策等，指出当前哪些资产被低估或高估。输出结构需包含：专业分析、通俗解释、可操作建议、风险提示。请严格控制输出在150字以内，用简洁明了的语言表达核心观点。',
+            'Growth_Factor_Analyst': '你是一名成长因子研究员。请分析每个资产的营收、净利润、现金流等增长指标，结合行业增速、未来预期、研发投入、市场空间等，判断哪些资产具备高成长潜力。输出结构需包含：专业分析、通俗解释、可操作建议、风险提示。请严格控制输出在150字以内，用简洁明了的语言表达核心观点。',
+            'Momentum_Factor_Analyst': '你是一名动量因子研究员。请分析每个资产的价格趋势、换手率、资金流向、历史涨跌幅等，结合市场热点、资金面、技术形态，识别强势资产和弱势资产。输出结构需包含：专业分析、通俗解释、可操作建议、风险提示。请严格控制输出在150字以内，用简洁明了的语言表达核心观点。',
+            'Quality_Factor_Analyst': '你是一名质量因子研究员。请分析每个资产的ROE、ROA、负债率、盈利质量、现金流稳定性等，结合行业对比、历史表现，筛选出财务健康、盈利能力强的资产。输出结构需包含：专业分析、通俗解释、可操作建议、风险提示。请严格控制输出在150字以内，用简洁明了的语言表达核心观点。',
+            'Volatility_Factor_Analyst': '你是一名波动率因子研究员。请分析每个资产的历史波动率、最大回撤、夏普比率、相关性等，结合市场环境、资产类别，评估风险水平。输出结构需包含：专业分析、通俗解释、可操作建议、风险提示。请严格控制输出在150字以内，用简洁明了的语言表达核心观点。',
+            'Liquidity_Factor_Analyst': '你是一名流动性因子研究员。请分析每个资产的成交量、买卖价差、赎回周期、流动性风险等，结合市场环境和客户资金需求，评估流动性水平。输出结构需包含：专业分析、通俗解释、可操作建议、风险提示。请严格控制输出在150字以内，用简洁明了的语言表达核心观点。',
+            'Sentiment_Factor_Analyst': '你是一名情绪因子研究员。请分析新闻、社交媒体、市场情绪指标、资金流向等，判断市场整体情绪和热点板块。输出结构需包含：专业分析、通俗解释、可操作建议、风险提示。请严格控制输出在150字以内，用简洁明了的语言表达核心观点。',
+            'Macro_Factor_Analyst': '你是一名宏观因子研究员。请分析利率、汇率、通胀、GDP、政策环境等宏观经济指标，结合资产类别、币种、市场，评估对各类资产的影响。输出结构需包含：专业分析、通俗解释、可操作建议、风险提示。请严格控制输出在150字以内，用简洁明了的语言表达核心观点。'
         }
         
         # 检查是否使用默认API密钥
-        if config_list[0].get('api_key') == 'your-openai-api-key-here':
+        if config_list[0].get('api_key') in ['your-openai-api-key-here', 'XXXXXXXXXX'] or not config_list[0].get('api_key'):
             print("使用默认API密钥，返回模拟分析结果")
             factor_results = {
                 'Value_Factor_Analyst': '【价值因子分析】\n专业分析：茅台估值合理，腾讯存在低估，苹果估值偏高。\n通俗解释：茅台价格合理，腾讯具有投资价值，苹果需谨慎。\n可操作建议：增持腾讯，持有茅台，观望苹果。\n风险提示：市场波动影响估值判断。',
@@ -138,15 +181,23 @@ def analyze(request: AnalyzeRequest):
                     )
                     agent.chat(
                         message=f'请对以下资产明细做因子分析，输出结构化建议：\n{asset_str}',
-                        use_cache=False
+                        use_cache=False,
+                        user_choice=request.user_choice if hasattr(request, 'user_choice') else 'restart'
                     )
                     factor_results[name] = agent.assistant.last_message()["content"]
+                    # 获取结果后重置 agent
+                    agent.reset()
                 except Exception as e:
                     print(f"因子分析失败 {name}: {e}")
                     factor_results[name] = f"分析失败: {str(e)}"
+                    # 即使失败也要重置
+                    try:
+                        agent.reset()
+                    except:
+                        pass
 
         # 3. CIO汇总
-        if config_list[0].get('api_key') == 'your-openai-api-key-here':
+        if config_list[0].get('api_key') in ['your-openai-api-key-here', 'XXXXXXXXXX'] or not config_list[0].get('api_key'):
             cio_result = '''【首席投资官（CIO）全局配置建议】
 
 专业分析：基于多因子分析，当前组合配置合理但需优化。建议采用"平衡型"策略，调整配置比例提升效率。
@@ -165,7 +216,7 @@ def analyze(request: AnalyzeRequest):
 风险提示：股票有市场风险，汇率波动影响海外资产，政策变化影响行业。建议根据个人情况选择配置方案。'''
         else:
             cio_prompt = '''
-你是首席投资官（CIO）。请汇总所有分析师的专业结论，结合客户风险偏好、目标收益、流动性需求和约束，输出最终的资产配置建议。请用专业术语、通俗语言和可操作建议三层结构，详细解释配置理由、主要风险点、动态调整建议，并给出后续跟踪和复盘建议。针对客户实际情况，给出多种全局配置方案（如稳健型、平衡型、进取型），并说明每种方案的预期收益、风险概率、适用客户类型。输出结构需包含：专业分析、通俗解释、可操作建议、后续跟踪、风险提示。请控制在500字以内。
+你是首席投资官（CIO）。请汇总所有分析师的专业结论，结合客户风险偏好、目标收益、流动性需求和约束，输出最终的资产配置建议。请用专业术语、通俗语言和可操作建议三层结构，详细解释配置理由、主要风险点、动态调整建议，并给出后续跟踪和复盘建议。针对客户实际情况，给出多种全局配置方案（如稳健型、平衡型、进取型），并说明每种方案的预期收益、风险概率、适用客户类型。输出结构需包含：专业分析、通俗解释、可操作建议、后续跟踪、风险提示。请严格控制输出在300字以内，用简洁明了的语言表达核心观点。
 '''
             try:
                 cio_agent = SingleAssistant(
@@ -175,16 +226,36 @@ def analyze(request: AnalyzeRequest):
                 summary = '\n'.join([f'{k}: {v}' for k, v in factor_results.items()])
                 cio_agent.chat(
                     message=f'请基于以下多因子分析师结论，输出全局资产配置建议：\n{summary}',
-                    use_cache=False
+                    use_cache=False,
+                    user_choice=request.user_choice if hasattr(request, 'user_choice') else 'restart'
                 )
                 cio_result = cio_agent.assistant.last_message()["content"]
+                # 获取结果后重置 agent
+                cio_agent.reset()
             except Exception as e:
                 print(f"CIO分析失败: {e}")
                 cio_result = f"CIO分析失败: {str(e)}"
+                # 即使失败也要重置
+                try:
+                    cio_agent.reset()
+                except:
+                    pass
 
         return {
             "factor_results": factor_results,
             "cio_result": cio_result
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"分析失败: {e}")
+        return {
+            "error": "分析失败",
+            "detail": str(e),
+            "factor_results": {},
+            "cio_result": "分析过程中发生错误，请重试。"
+        }
+    finally:
+        # 清理超时标志
+        if hasattr(analyze, '_timeout'):
+            delattr(analyze, '_timeout')
+        if hasattr(analyze, '_start_time'):
+            delattr(analyze, '_start_time')
